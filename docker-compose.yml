@@ -1,0 +1,28 @@
+services:
+  rag:
+    build: .
+    image: rag-sdm-polri:latest
+    container_name: rag-sdm-polri
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persistkan dokumen & index agar tidak hilang saat restart
+      - rag_docs:/app/data/docs
+      - rag_index:/app/data/index
+    env_file:
+      - .env
+    environment:
+      - PORT=8080
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      - GEMINI_FALLBACK_MODELS=${GEMINI_FALLBACK_MODELS:-gemini-3.5-flash,gemini-3.8-flash,gemini-flash-latest}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+volumes:
+  rag_docs:
+  rag_index:

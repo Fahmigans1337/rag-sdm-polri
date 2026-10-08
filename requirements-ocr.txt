@@ -1,0 +1,3 @@
+# Opsional: OCR otomatis untuk PDF hasil scan yang diunggah lewat UI.
+# (Dokumen bawaan sudah memiliki hasil OCR di data/ocr, jadi ini tidak wajib.)
+rapidocr-onnxruntime>=1.2.3
