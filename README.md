@@ -93,7 +93,7 @@ Sistem ini mengimplementasikan pipeline **RAG (Retrieval-Augmented Generation)**
 ### Prasyarat
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac/Linux)
-- API Key OpenAI dari [platform.openai.com/api-keys](https://platform.openai.com/api-keys) (akun harus memiliki kredit)
+- API key LLM milik Anda sendiri — [OpenRouter](https://openrouter.ai/settings/keys) (disarankan), [OpenAI](https://platform.openai.com/api-keys), atau [Groq](https://console.groq.com/keys) (gratis). Lihat catatan di bawah
 
 ### 1. Clone Repository
 
@@ -102,27 +102,46 @@ git clone https://github.com/Fahmigans1337/rag-sdm-polri.git
 cd rag-sdm-polri
 ```
 
-### 2. Konfigurasi Environment
+### 2. Jalankan (satu perintah)
 
-Salin file contoh dan isi API key:
+Skrip akan **meminta Anda menempel API key sendiri** (tidak ditampilkan di layar), memvalidasinya,
+membuat file `.env`, lalu membangun dan menjalankan Docker.
 
-```bash
-cp .env.example .env
-```
-
-Edit file `.env`:
-
-```env
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-proj-xxxxxxxx
-OPENAI_MODEL=openai/gpt-4o-mini
-OPENAI_FALLBACK_MODELS=google/gemini-2.5-flash-lite
-```
-
-### 3. Jalankan dengan Docker
+**Linux / macOS / WSL:**
 
 ```bash
-docker compose up --build
+chmod +x start.sh && ./start.sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+.\start.ps1
+```
+
+Setelah muncul `SIAP`, buka **http://localhost:8080**.
+
+> [!IMPORTANT]
+> **Mengapa API key tidak ada di repository?** Penyedia API (OpenAI, Google, OpenRouter) memindai GitHub
+> secara otomatis dan **langsung menonaktifkan key yang terlihat publik**. Karena itu key tidak disertakan
+> di repo ini; setiap penguji memakai key miliknya sendiri. Tanpa key aplikasi tetap berjalan tanpa galat
+> dalam **mode ekstraktif** (badge "AI OFFLINE", jawaban dokumen tetap muncul lengkap dengan sumber halaman).
+> Format key yang didukung: OpenRouter `sk-or-v1-...`, OpenAI `sk-...`, Groq `gsk_...`.
+
+<details>
+<summary>Cara manual (tanpa skrip)</summary>
+
+```bash
+cp .env.example .env      # lalu isi OPENAI_API_KEY di .env
+docker compose up -d --build
+```
+
+</details>
+
+### 3. Pantau Log (opsional)
+
+```bash
+docker compose logs -f
 ```
 
 Tunggu hingga log menampilkan:

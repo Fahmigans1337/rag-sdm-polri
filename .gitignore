@@ -14,6 +14,8 @@ build/
 venv/
 env/
 
+# Environment variables (JANGAN commit API key!)
+.env
 
 # Index (generated). data/ocr/ SENGAJA ikut di-commit: sidecar OCR dokumen scan
 data/index/

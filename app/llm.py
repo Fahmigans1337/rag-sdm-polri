@@ -156,6 +156,8 @@ class LLM:
     # -- OpenAI-compatible
     def _openai(self, system: str, user: str, temperature: float, max_tokens: int) -> str:
         base = (settings.OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
+        if not settings.OPENAI_API_KEY and ("openai.com" in base or "openrouter.ai" in base or "groq.com" in base):
+            raise LLMError("API key belum diisi (OPENAI_API_KEY kosong)")
         headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY or 'ollama'}"}
         is_openrouter = "openrouter.ai" in base
         if is_openrouter:
