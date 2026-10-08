@@ -30,6 +30,22 @@ def _bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in {"1", "true", "yes", "on"}
 
 
+_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+
+
+def _provider_defaults(key: str) -> dict[str, str]:
+    """Default base URL/model berdasarkan jenis API key."""
+    if key.startswith("sk-or-"):  # OpenRouter
+        return {"base": "https://openrouter.ai/api/v1", "model": "openai/gpt-4o-mini",
+                "fallback": "google/gemini-2.5-flash-lite"}
+    if key.startswith("gsk_"):  # Groq
+        return {"base": "https://api.groq.com/openai/v1", "model": "llama-3.3-70b-versatile", "fallback": ""}
+    return {"base": "", "model": "gpt-4o-mini", "fallback": ""}  # OpenAI
+
+
+_PD = _provider_defaults(_KEY)
+
+
 class Settings:
     # --- Lokasi data -------------------------------------------------------
     DOCS_DIR: Path = Path(os.getenv("DOCS_DIR", BASE_DIR / "data" / "docs"))
@@ -67,12 +83,12 @@ class Settings:
     GEMINI_BASE_URL: str = os.getenv(
         "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
     )
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "")
-    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_API_KEY: str = _KEY
+    # Cukup isi OPENAI_API_KEY: base URL & model otomatis menyesuaikan jenis key (bisa dioverride lewat env)
+    OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "").strip() or _PD["base"]
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "").strip() or _PD["model"]
     # Khusus OpenRouter: model cadangan otomatis (dipisah koma, maks. 2) bila model utama gagal/sibuk
-    OPENAI_FALLBACK_MODELS: str = os.getenv("OPENAI_FALLBACK_MODELS", "")
-    OPENAI_FALLBACK_MODELS: str = os.getenv("OPENAI_FALLBACK_MODELS", "")
+    OPENAI_FALLBACK_MODELS: str = os.getenv("OPENAI_FALLBACK_MODELS", "").strip() or _PD["fallback"]
     LLM_TIMEOUT: float = float(os.getenv("LLM_TIMEOUT", "25"))
 
     AUTO_INGEST: bool = _bool("AUTO_INGEST", True)

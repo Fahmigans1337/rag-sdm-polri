@@ -102,41 +102,48 @@ git clone https://github.com/Fahmigans1337/rag-sdm-polri.git
 cd rag-sdm-polri
 ```
 
-### 2. Jalankan (satu perintah)
+### 2. Jalankan dengan Docker
 
-Skrip akan **meminta Anda menempel API key sendiri** (tidak ditampilkan di layar), memvalidasinya,
-membuat file `.env`, lalu membangun dan menjalankan Docker.
+Cukup **satu variabel** `OPENAI_API_KEY` berisi API key milik Anda sendiri. Jenis key dikenali otomatis
+(OpenRouter `sk-or-...`, OpenAI `sk-...`, Groq `gsk_...`); file `.env` **tidak wajib**.
 
 **Linux / macOS / WSL:**
 
 ```bash
-chmod +x start.sh && ./start.sh
+OPENAI_API_KEY="tempel_key_anda" docker compose up -d --build
 ```
 
-**Windows (PowerShell):**
+**Windows PowerShell:**
 
 ```powershell
-.\start.ps1
+$env:OPENAI_API_KEY="tempel_key_anda"; docker compose up -d --build
 ```
 
-Setelah muncul `SIAP`, buka **http://localhost:8080**.
+Tunggu sekitar satu menit, lalu buka **http://localhost:8080**.
 
 > [!IMPORTANT]
 > **Mengapa API key tidak ada di repository?** Penyedia API (OpenAI, Google, OpenRouter) memindai GitHub
 > secara otomatis dan **langsung menonaktifkan key yang terlihat publik**. Karena itu key tidak disertakan
 > di repo ini; setiap penguji memakai key miliknya sendiri. Tanpa key aplikasi tetap berjalan tanpa galat
 > dalam **mode ekstraktif** (badge "AI OFFLINE", jawaban dokumen tetap muncul lengkap dengan sumber halaman).
-> Format key yang didukung: OpenRouter `sk-or-v1-...`, OpenAI `sk-...`, Groq `gsk_...`.
 
 <details>
-<summary>Cara manual (tanpa skrip)</summary>
+<summary>Alternatif: skrip interaktif (key diketik tersembunyi, tidak masuk riwayat terminal)</summary>
 
 ```bash
-cp .env.example .env      # lalu isi OPENAI_API_KEY di .env
-docker compose up -d --build
+chmod +x start.sh && ./start.sh        # Linux / macOS / WSL
 ```
 
+```powershell
+.\start.ps1                             # Windows PowerShell
+```
+
+Atau lewat file: `cp .env.example .env`, isi `OPENAI_API_KEY`, lalu `docker compose up -d --build`.
+
 </details>
+
+**Ganti key / hentikan:** jalankan ulang perintah di atas dengan key baru (container dibuat ulang otomatis),
+atau `docker compose down` untuk menghentikan.
 
 ### 3. Pantau Log (opsional)
 

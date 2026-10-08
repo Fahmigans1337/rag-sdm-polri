@@ -9,12 +9,16 @@ services:
       # Persistkan dokumen & index agar tidak hilang saat restart
       - rag_docs:/app/data/docs
       - rag_index:/app/data/index
-    env_file:
-      - .env
+    # Tidak memakai env_file: file .env TIDAK wajib ada.
+    # Compose otomatis membaca variabel dari shell ATAU dari file .env (jika ada) untuk nilai ${...} di bawah.
+    # Cukup isi OPENAI_API_KEY (OpenRouter sk-or-..., OpenAI sk-..., Groq gsk_...); sisanya otomatis.
     environment:
       - PORT=8080
-      - LLM_PROVIDER=openai
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-}
+      - OPENAI_FALLBACK_MODELS=${OPENAI_FALLBACK_MODELS:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')"]
