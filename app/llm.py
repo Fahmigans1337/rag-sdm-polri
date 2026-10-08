@@ -55,11 +55,29 @@ class LLM:
         return LLMInfo(self.provider, self.model)
 
     def generate(self, system: str, user: str, temperature: float = 0.2, max_tokens: int = 1500) -> str:
-        if self.provider == "gemini":
-            return self._gemini(system, user, temperature, max_tokens)
-        if self.provider == "openai":
-            return self._openai(system, user, temperature, max_tokens)
-        raise LLMError("LLM tidak dikonfigurasi")
+        if self.provider not in {"gemini", "openai"}:
+            raise LLMError("LLM tidak dikonfigurasi")
+        # Urutan percobaan: penyedia utama dulu, lalu penyedia lain yang key-nya terisi (failover)
+        order = [self.provider]
+        if settings.LLM_PROVIDER in {"auto", "openai", "gemini"}:
+            if self.provider != "gemini" and settings.GEMINI_API_KEY:
+                order.append("gemini")
+            if self.provider != "openai" and settings.OPENAI_API_KEY:
+                order.append("openai")
+        errors: list[str] = []
+        for prov in order:
+            try:
+                if prov == "gemini":
+                    out = self._gemini(system, user, temperature, max_tokens)
+                else:
+                    out = self._openai(system, user, temperature, max_tokens)
+                    self._last_model = settings.OPENAI_MODEL
+                self._last_provider = prov
+                return out
+            except LLMError as e:
+                log.warning("Penyedia %s gagal: %s", prov, str(e)[:200])
+                errors.append(f"{prov}: {e}")
+        raise LLMError(" || ".join(errors))
 
     def _gemini_models(self) -> list[str]:
         chain = [settings.GEMINI_MODEL] + [m.strip() for m in settings.GEMINI_FALLBACK_MODELS.split(",") if m.strip()]
@@ -145,12 +163,23 @@ class LLM:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
-        try:
-            r = httpx.post(f"{base}/chat/completions", json=body, headers=headers, timeout=settings.LLM_TIMEOUT)
-        except httpx.HTTPError as e:
-            raise LLMError(f"Gagal menghubungi LLM: {e}") from e
+        def _post(b: dict) -> httpx.Response:
+            try:
+                return httpx.post(f"{base}/chat/completions", json=b, headers=headers, timeout=settings.LLM_TIMEOUT)
+            except httpx.HTTPError as e:
+                raise LLMError(f"Gagal menghubungi LLM: {type(e).__name__}") from e
+
+        r = _post(body)
+        if r.status_code == 400 and "max_tokens" in r.text:  # model baru (gpt-5/o-series) memakai max_completion_tokens
+            body.pop("max_tokens", None)
+            body["max_completion_tokens"] = max_tokens
+            r = _post(body)
+        if r.status_code == 400 and "temperature" in r.text:  # sebagian model hanya mendukung temperature default
+            body.pop("temperature", None)
+            r = _post(body)
         if r.status_code != 200:
-            raise LLMError(f"LLM HTTP {r.status_code}: {r.text[:300]}")
+            kind = "kuota/kredit habis" if r.status_code == 429 and "quota" in r.text.lower() else ""
+            raise LLMError(f"LLM HTTP {r.status_code} {kind}: {r.text[:200]}".replace("\n", " "))
         try:
             return r.json()["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError) as e:

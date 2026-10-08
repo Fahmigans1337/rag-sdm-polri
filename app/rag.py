@@ -172,23 +172,23 @@ class RAGEngine:
 
     @staticmethod
     def _llm_down_message(err: str) -> str:
-        if "401" in err or "403" in err:
-            reason = "API key Gemini **tidak valid atau sudah kedaluwarsa** (HTTP 401/403)"
+        if "kuota/kredit habis" in err or "no credits" in err or "insufficient_quota" in err:
+            reason = "**kredit/kuota API habis** (HTTP 429) - tambah saldo di platform.openai.com/settings/organization/billing"
+        elif "401" in err or "403" in err:
+            reason = "**API key tidak valid atau sudah kedaluwarsa** (HTTP 401/403)"
         elif "429" in err:
-            reason = "kuota API Gemini habis / terlalu banyak permintaan (HTTP 429)"
+            reason = "terlalu banyak permintaan / kuota API terlampaui (HTTP 429), coba lagi sebentar"
         elif "belum diisi" in err or "tidak dikonfigurasi" in err:
-            reason = "`GEMINI_API_KEY` belum diisi"
+            reason = "API key belum diisi"
         else:
-            reason = "layanan Gemini tidak dapat dihubungi (cek koneksi internet)"
+            reason = "layanan AI tidak dapat dihubungi (cek koneksi internet)"
         return (
-            f"⚠️ **Mode AI sedang offline** — {reason}.\n\n"
-            "**Cara memperbaiki:** isi `GEMINI_API_KEY` yang valid di file `.env` "
-            "(buat gratis di https://aistudio.google.com/apikey), lalu jalankan "
-            "`docker compose up -d --force-recreate`.\n\n"
-            "Sementara itu pencarian dokumen tanpa AI tetap berfungsi — "
+            f"⚠️ **Mode AI sedang offline** - {reason}.\n\n"
+            "**Cara memperbaiki:** isi `OPENAI_API_KEY` (atau `GEMINI_API_KEY`) yang valid di file `.env`, "
+            "lalu jalankan `docker compose up -d --force-recreate`.\n\n"
+            "Sementara itu pencarian dokumen tanpa AI tetap berfungsi - "
             "coba tanyakan hal spesifik tentang isi dokumen (mis. persyaratan SBP atau penilaian kinerja)."
         )
-
     def add_file(self, path: Path) -> ParsedDoc:
         doc = parse_file(path)
         if not doc.chunks:

@@ -63,7 +63,7 @@ def health():
             "docs": st["documents"],
             "chunks": st["chunks"],
             "retrieval": st.get("retrieval", "BM25"),
-            "llm": st.get("llm", "gemini"),
+            "llm": st.get("llm", "openai"),
             "llm_model": st.get("llm_model", ""),
             "llm_error": engine.llm_error,
         },

@@ -10,7 +10,7 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://docker.com)
-[![Gemini](https://img.shields.io/badge/LLM-Gemini_API-4285F4?style=flat-square&logo=google&logoColor=white)](https://aistudio.google.com)
+[![OpenAI](https://img.shields.io/badge/LLM-OpenAI_API-412991?style=flat-square&logo=openai&logoColor=white)](https://platform.openai.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 
 </div>
@@ -24,7 +24,7 @@ Prototype aplikasi **Question & Answer** yang memungkinkan personel Polri mendap
 Sistem ini mengimplementasikan pipeline **RAG (Retrieval-Augmented Generation)** yang:
 1. **Memproses** dokumen PDF menjadi potongan (*chunks*) terindeks
 2. **Menemukan** bagian dokumen yang paling relevan dengan pertanyaan pengguna menggunakan BM25 + Hybrid Retrieval
-3. **Menghasilkan** jawaban akurat berbahasa Indonesia menggunakan LLM (Gemini), lengkap dengan referensi halaman sumber
+3. **Menghasilkan** jawaban akurat berbahasa Indonesia menggunakan LLM (OpenAI), lengkap dengan referensi halaman sumber
 
 > Sistem juga dapat menjawab pertanyaan umum di luar knowledge base sebagai asisten AI ramah.
 
@@ -63,13 +63,13 @@ Sistem ini mengimplementasikan pipeline **RAG (Retrieval-Augmented Generation)**
 └──────┬──────────────────────────────────────────┬────────────┘
        │                                          │
 ┌──────▼──────────────┐              ┌────────────▼────────────┐
-│   RAG Engine        │              │   LLM (Gemini API)       │
+│   RAG Engine        │              │   LLM (OpenAI API)       │
 │                     │              │                          │
-│  ┌───────────────┐  │              │  gemini-3.5-flash-lite   │
+│  ┌───────────────┐  │              │  gpt-4o-mini            │
 │  │  Ingest       │  │              │  ↓ fallback chain        │
-│  │  PDF → Chunks │  │              │  gemini-3.5-flash        │
-│  │  Laws/General │  │              │  gemini-3.8-flash        │
-│  └───────┬───────┘  │              │  gemini-flash-latest     │
+│  │  PDF → Chunks │  │              │  (model lain via .env) │
+│  │  Laws/General │  │              │                         │
+│  └───────┬───────┘  │              │                         │
 │          │          │              └──────────────────────────┘
 │  ┌───────▼───────┐  │
 │  │  Knowledge    │  │
@@ -93,7 +93,7 @@ Sistem ini mengimplementasikan pipeline **RAG (Retrieval-Augmented Generation)**
 ### Prasyarat
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac/Linux)
-- API Key Gemini gratis dari [Google AI Studio](https://aistudio.google.com/apikey)
+- API Key OpenAI dari [platform.openai.com/api-keys](https://platform.openai.com/api-keys) (akun harus memiliki kredit)
 
 ### 1. Clone Repository
 
@@ -113,8 +113,9 @@ cp .env.example .env
 Edit file `.env`:
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-3.5-flash-lite
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-proj-xxxxxxxx
+OPENAI_MODEL=gpt-4o-mini
 ```
 
 ### 3. Jalankan dengan Docker
@@ -173,9 +174,9 @@ docker compose down -v
 
 | Variabel | Default | Keterangan |
 |---|---|---|
-| `GEMINI_API_KEY` | *(wajib)* | API Key dari Google AI Studio |
-| `GEMINI_MODEL` | `gemini-3.5-flash-lite` | Model utama Gemini |
-| `GEMINI_FALLBACK_MODELS` | `gemini-3.5-flash,...` | Rantai fallback jika model utama limit |
+| `OPENAI_API_KEY` | *(wajib)* | API Key dari platform.openai.com |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Model OpenAI yang dipakai |
+| `LLM_PROVIDER` | `openai` | Penyedia LLM (`openai` / `none` untuk mode ekstraktif) |
 | `MIN_COVERAGE` | `0.42` | Ambang relevansi BM25 (0.0–1.0) |
 | `TOP_K` | `6` | Jumlah chunk terambil per query |
 | `LLM_TIMEOUT` | `25` | Timeout request ke LLM (detik) |
@@ -209,7 +210,7 @@ rag-sdm-polri/
 │   ├── rag.py           # RAG pipeline utama (ingest→retrieve→generate)
 │   ├── retrieval.py     # BM25 + Hybrid Index + Re-ranking
 │   ├── ingest.py        # PDF parser + chunking (Laws/General template)
-│   ├── llm.py           # Gemini & OpenAI-compatible client + fallback
+│   ├── llm.py           # OpenAI client (+ fallback ekstraktif tanpa LLM)
 │   ├── config.py        # Settings dari environment variable
 │   └── static/
 │       ├── index.html   # Single-page Cyber UI
@@ -242,7 +243,7 @@ rag-sdm-polri/
 | **PDF Parsing** | PyMuPDF (fitz) + OCR sidecar |
 | **Retrieval** | BM25 (custom), Numpy, Reciprocal Rank Fusion |
 | **Re-ranking** | Keyword coverage + phrase match + section match |
-| **LLM** | Google Gemini API (gemini-3.5-flash-lite) |
+| **LLM** | OpenAI API (gpt-4o-mini) |
 | **Frontend** | Vanilla JS, HTML5 Canvas (particle network) |
 | **Containerisasi** | Docker, Docker Compose |
 | **HTTP Client** | HTTPX (async-capable) |
@@ -305,7 +306,7 @@ python scripts/debug_retrieval.py
 
 - Sistem menggunakan **BM25-only** (leksikal) karena koneksi ke model embedding eksternal mungkin timeout tergantung jaringan. Untuk mengaktifkan hybrid embedding, pastikan koneksi ke HuggingFace tersedia.
 - Jawaban hanya berdasarkan dokumen di knowledge base. Jika informasi tidak tersedia, sistem akan menyampaikan bahwa data tidak ditemukan.
-- API Key Gemini gratis tersedia di [https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+- API Key OpenAI dibuat di [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 
 ---
 
@@ -313,7 +314,7 @@ python scripts/debug_retrieval.py
 
 **Seleksi Kemampuan Pemrograman — Tahap 2**
 Topik: *Retrieval-Augmented Generation (RAG)*
-By: Bripda Zul Fahmi Rizki
+Periode: 8–14 Oktober 2026
 
 ---
 
@@ -321,6 +322,6 @@ By: Bripda Zul Fahmi Rizki
 
 **RAG SDM POLRI** — *Secure Knowledge Terminal*
 
-Built with ❤️ using FastAPI + Gemini API
+Built with ❤️ using FastAPI + OpenAI API
 
 </div>
