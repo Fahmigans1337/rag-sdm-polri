@@ -1,7 +1,9 @@
 """Penyedia LLM: Gemini, OpenAI-compatible (OpenAI/Groq/OpenRouter/Ollama), atau tanpa LLM."""
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 
@@ -195,3 +197,63 @@ class LLM:
             return r.json()["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError) as e:
             raise LLMError(f"Respons LLM tidak terduga: {r.text[:300]}") from e
+
+
+# --------------------------------------------------------------------------- API key dari UI
+def _key_file():
+    return settings.INDEX_DIR / "llm_key.json"
+
+
+def _check_url(key: str) -> str:
+    if key.startswith("sk-or-"):
+        return "https://openrouter.ai/api/v1/key"
+    if key.startswith("gsk_"):
+        return "https://api.groq.com/openai/v1/models"
+    return "https://api.openai.com/v1/models"
+
+
+def apply_key(key: str, validate: bool = True) -> str:
+    """Pasang API key saat runtime (dari UI). Jenis penyedia dikenali dari awalan key.
+    Memvalidasi ke penyedia (kecuali validate=False), menyimpan ke volume, dan mengembalikan pesan sukses."""
+    from .config import _provider_defaults  # lokal agar tidak menambah dependensi impor
+
+    key = re.sub(r"\s", "", key or "")
+    if len(key) < 12 or not key.isascii():
+        raise LLMError("Format API key tidak valid.")
+    if validate:
+        try:
+            r = httpx.get(_check_url(key), headers={"Authorization": f"Bearer {key}"}, timeout=15)
+        except httpx.HTTPError as e:
+            raise LLMError(f"Tidak dapat menghubungi penyedia API ({type(e).__name__}). Periksa koneksi internet.") from e
+        if r.status_code in (401, 403):
+            raise LLMError(f"API key ditolak oleh penyedia (HTTP {r.status_code}). Periksa kembali key Anda.")
+        if r.status_code >= 500:
+            raise LLMError(f"Penyedia API sedang bermasalah (HTTP {r.status_code}). Coba lagi sebentar.")
+    d = _provider_defaults(key)
+    settings.OPENAI_API_KEY = key
+    settings.OPENAI_BASE_URL = d["base"]
+    settings.OPENAI_MODEL = d["model"]
+    settings.OPENAI_FALLBACK_MODELS = d["fallback"]
+    settings.LLM_PROVIDER = "openai"
+    try:  # simpan agar tetap aktif setelah container restart (volume rag_index)
+        settings.INDEX_DIR.mkdir(parents=True, exist_ok=True)
+        f = _key_file()
+        f.write_text(json.dumps({"key": key}), encoding="utf-8")
+        f.chmod(0o600)
+    except OSError as e:  # noqa: BLE001
+        log.warning("Key tidak dapat disimpan ke disk (%s); hanya aktif sampai restart.", e)
+    name = "OpenRouter" if key.startswith("sk-or-") else "Groq" if key.startswith("gsk_") else "OpenAI"
+    return f"API key {name} aktif (model {d['model']})."
+
+
+def load_saved_key() -> bool:
+    """Muat key yang disimpan dari UI (jika ada). Dipanggil saat startup; key dari UI menang atas env."""
+    f = _key_file()
+    try:
+        if f.is_file():
+            apply_key(json.loads(f.read_text(encoding="utf-8"))["key"], validate=False)
+            log.info("API key dimuat dari penyimpanan (dipasang lewat UI).")
+            return True
+    except (OSError, ValueError, KeyError, LLMError) as e:
+        log.warning("Key tersimpan tidak dapat dimuat: %s", e)
+    return False

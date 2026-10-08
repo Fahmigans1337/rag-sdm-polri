@@ -287,6 +287,44 @@ body{
 .live-badge.ready .live-dot{background:#10b981;animation-name:liveGreen}
 .live-badge.ready{color:#10b981;border-color:rgba(16,185,129,.3)}
 .live-badge.error .live-dot{background:#ef4444;animation:none}
+.live-badge.error{color:#ef4444;border-color:rgba(239,68,68,.35);cursor:pointer}
+.topbar .btn-key{
+  margin-left:auto;margin-right:10px;
+  padding:7px 14px;border-radius:2px;cursor:pointer;
+  font-family:Consolas,monospace;font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+  color:#f5c107;background:rgba(245,193,7,.07);border:1px solid rgba(245,193,7,.35);
+  transition:background .15s,box-shadow .15s;
+}
+.topbar .btn-key:hover{background:rgba(245,193,7,.16);box-shadow:0 0 14px rgba(245,193,7,.25)}
+.topbar .btn-key+.live-badge{margin-left:0}
+.kmodal{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:20px}
+.kmodal[hidden]{display:none}
+.kmodal-bg{position:absolute;inset:0;background:rgba(2,6,14,.78);backdrop-filter:blur(3px)}
+.kmodal-box{
+  position:relative;width:min(520px,100%);padding:22px 24px;
+  background:#0a1220;border:1px solid rgba(245,193,7,.4);border-radius:3px;
+  box-shadow:0 0 40px rgba(245,193,7,.12),0 20px 60px rgba(0,0,0,.6);
+}
+.kmodal-box h3{font-size:15px;letter-spacing:.08em;color:#f5c107;text-transform:uppercase;margin-bottom:8px}
+.kmodal-box p{font-size:13px;line-height:1.55;color:rgba(200,214,236,.8);margin-bottom:6px}
+.kmodal-box small{display:block;font-size:11.5px;color:rgba(140,160,195,.7);margin:6px 0 12px;line-height:1.5}
+.kmodal-box input{
+  width:100%;padding:11px 12px;border-radius:2px;outline:none;
+  font-family:Consolas,monospace;font-size:13px;color:#e8eefc;
+  background:rgba(255,255,255,.04);border:1px solid rgba(245,193,7,.3);
+}
+.kmodal-box input:focus{border-color:#f5c107;box-shadow:0 0 0 2px rgba(245,193,7,.18)}
+.kmsg{min-height:18px;margin-top:10px;font-size:12.5px;font-family:Consolas,monospace;color:rgba(200,214,236,.75)}
+.kmsg.ok{color:#10b981}.kmsg.err{color:#ef4444}
+.kbtns{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+.kbtns button{
+  padding:9px 18px;border-radius:2px;cursor:pointer;font-family:Consolas,monospace;
+  font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;
+}
+.kbtns .k-save{background:#f5c107;color:#0a1220;border:1px solid #f5c107;font-weight:700}
+.kbtns .k-save:disabled{opacity:.5;cursor:wait}
+.kbtns .k-cancel{background:transparent;color:rgba(200,214,236,.8);border:1px solid rgba(255,255,255,.18)}
+@media(max-width:860px){.topbar .btn-key{padding:6px 10px;font-size:10px;margin-right:6px}}
 @keyframes livePulse{
   0%{box-shadow:0 0 0 0 rgba(245,193,7,.6)}
   70%{box-shadow:0 0 0 9px rgba(245,193,7,0)}
@@ -767,6 +805,7 @@ body{
         <div class="topbar-title">ASISTEN INFORMASI <em>SDM POLRI</em></div>
         <div class="topbar-scope" id="scopeLabel">Mencari di semua dokumen (dipilih otomatis sesuai pertanyaan)</div>
       </div>
+      <button class="btn-key" id="keyBtn" type="button" title="Tempel API key AI milik Anda">🔑 API KEY</button>
       <div class="live-badge" id="liveBadge">
         <div class="live-dot"></div>
         <span id="liveText">Menyiapkan…</span>
@@ -834,6 +873,23 @@ body{
 </div>
 
 <div class="toast" id="toast" hidden></div>
+
+<div class="kmodal" id="keyModal" hidden role="dialog" aria-modal="true" aria-labelledby="keyTitle">
+  <div class="kmodal-bg" id="keyBg"></div>
+  <div class="kmodal-box">
+    <h3 id="keyTitle">🔑 Aktifkan AI dengan API key Anda</h3>
+    <p>Tempel API key milik Anda agar jawaban AI aktif. Jenis key dikenali otomatis.</p>
+    <small>Didukung: OpenRouter <b>sk-or-v1-…</b> · OpenAI <b>sk-…</b> · Groq <b>gsk_…</b><br>
+    Key hanya disimpan di server lokal (container Docker) Anda dan tidak pernah ditampilkan kembali.
+    Tanpa key, pencarian dokumen tetap berfungsi (mode ekstraktif).</small>
+    <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Tempel API key di sini…">
+    <div class="kmsg" id="keyMsg"></div>
+    <div class="kbtns">
+      <button type="button" class="k-cancel" id="keyCancel">Nanti</button>
+      <button type="button" class="k-save" id="keySave">Aktifkan</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════
@@ -1156,7 +1212,7 @@ async function loadDocs(){
 }
 async function waitReady(){
   for(let i=0;i<120;i++){
-    try{const s=await loadDocs();if(s.ready||s.error)return;}catch(_){}
+    try{const s=await loadDocs();if(s.ready||s.error){maybeAskKey(s);return;}}catch(_){}
     await new Promise(r=>setTimeout(r,2500));
   }
 }
@@ -1223,6 +1279,39 @@ $('cxClose').addEventListener('click',closeCX);
 $('cxBg').addEventListener('click',closeCX);
 el.cxQ.addEventListener('input',renderCX);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!el.cxModal.hidden)closeCX();});
+
+// ── API key (tempel dari UI) ──
+const keyModal=$('keyModal'),keyInput=$('keyInput'),keyMsg=$('keyMsg'),keySave=$('keySave');
+function openKey(){
+  keyModal.hidden=false;keyInput.value='';keyMsg.className='kmsg';keyMsg.textContent='';
+  document.body.style.overflow='hidden';setTimeout(()=>keyInput.focus(),60);
+}
+function closeKey(){keyModal.hidden=true;document.body.style.overflow='';}
+async function saveKey(){
+  const k=keyInput.value.trim();
+  if(k.length<12){keyMsg.className='kmsg err';keyMsg.textContent='✗ Key terlalu pendek. Tempel key lengkap.';return;}
+  keySave.disabled=true;keyMsg.className='kmsg';keyMsg.textContent='Memeriksa key ke penyedia…';
+  try{
+    const r=await fetch('/api/llm-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(typeof d.detail==='string'?d.detail:`Gagal (${r.status})`);
+    keyInput.value='';keyMsg.className='kmsg ok';keyMsg.textContent='✓ '+d.message;
+    await loadDocs();showToast('AI aktif');setTimeout(closeKey,1000);
+  }catch(e){keyMsg.className='kmsg err';keyMsg.textContent='✗ '+e.message;}
+  keySave.disabled=false;
+}
+$('keyBtn').addEventListener('click',openKey);
+$('keySave').addEventListener('click',saveKey);
+$('keyCancel').addEventListener('click',closeKey);
+$('keyBg').addEventListener('click',closeKey);
+keyInput.addEventListener('keydown',e=>{if(e.key==='Enter')saveKey();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!keyModal.hidden)closeKey();});
+el.live.addEventListener('click',()=>{if(el.live.classList.contains('error')&&!state.error)openKey();});
+function maybeAskKey(s){ // sekali per sesi tab: jika belum ada API key sama sekali
+  if(s&&s.ready&&s.llm_configured===false&&!sessionStorage.getItem('keyAsked')){
+    sessionStorage.setItem('keyAsked','1');openKey();
+  }
+}
 
 // ── Init ──
 loadChat();

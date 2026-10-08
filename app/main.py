@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import settings
+from .llm import LLMError, apply_key, load_saved_key
 from .rag import RAGEngine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -24,6 +25,9 @@ MAX_UPLOAD_MB = 60
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if load_saved_key():  # key yang ditempel lewat UI (tersimpan di volume)
+        engine.llm.provider = "openai"
+        engine.llm.model = settings.OPENAI_MODEL
     # Bangun index di thread terpisah agar server langsung merespons (/api/health menunjukkan status).
     if settings.AUTO_INGEST:
         threading.Thread(target=engine.load_all, daemon=True, name="ingest").start()
@@ -66,9 +70,26 @@ def health():
             "llm": st.get("llm", "openai"),
             "llm_model": st.get("llm_model", ""),
             "llm_error": engine.llm_error,
+            "llm_configured": bool(settings.OPENAI_API_KEY or settings.GEMINI_API_KEY),
         },
     }
 
+
+class KeyRequest(BaseModel):
+    key: str = Field(min_length=8, max_length=300)
+
+
+@app.post("/api/llm-key", tags=["Sistem"])
+def set_llm_key(req: KeyRequest):
+    """Pasang API key LLM dari UI (OpenRouter sk-or-..., OpenAI sk-..., Groq gsk_...). Key tidak pernah dikembalikan."""
+    try:
+        msg = apply_key(req.key)
+    except LLMError as e:
+        raise HTTPException(400, str(e)) from e
+    engine.llm.provider = "openai"
+    engine.llm.model = settings.OPENAI_MODEL
+    engine.llm_error = None
+    return {"ok": True, "message": msg, "model": settings.OPENAI_MODEL}
 
 @app.post("/api/chat", tags=["Chat"])
 def chat(req: ChatRequest):

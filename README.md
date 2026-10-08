@@ -104,22 +104,28 @@ cd rag-sdm-polri
 
 ### 2. Jalankan dengan Docker
 
-Cukup **satu variabel** `OPENAI_API_KEY` berisi API key milik Anda sendiri. Jenis key dikenali otomatis
-(OpenRouter `sk-or-...`, OpenAI `sk-...`, Groq `gsk_...`); file `.env` **tidak wajib**.
-
-**Linux / macOS / WSL:**
-
 ```bash
-OPENAI_API_KEY="tempel_key_anda" docker compose up -d --build
-```
-
-**Windows PowerShell:**
-
-```powershell
-$env:OPENAI_API_KEY="tempel_key_anda"; docker compose up -d --build
+docker compose up -d --build
 ```
 
 Tunggu sekitar satu menit, lalu buka **http://localhost:8080**.
+
+### 3. Tempel API key milik Anda (di browser)
+
+Saat pertama dibuka, muncul jendela **"Aktifkan AI dengan API key Anda"** (atau klik tombol **🔑 API KEY**
+di pojok kanan atas). Tempel key Anda, lalu klik **Aktifkan**. Key divalidasi ke penyedia, jenis penyedia
+dikenali otomatis (OpenRouter `sk-or-v1-...`, OpenAI `sk-...`, Groq `gsk_...`), dan tersimpan di volume Docker
+lokal sehingga tetap aktif setelah container di-restart. Tidak perlu terminal maupun file `.env`.
+
+Alternatif lewat terminal (opsional):
+
+```bash
+OPENAI_API_KEY="tempel_key_anda" docker compose up -d --build            # Linux / macOS / WSL
+```
+
+```powershell
+$env:OPENAI_API_KEY="tempel_key_anda"; docker compose up -d --build       # Windows PowerShell
+```
 
 > [!IMPORTANT]
 > **Mengapa API key tidak ada di repository?** Penyedia API (OpenAI, Google, OpenRouter) memindai GitHub
@@ -145,7 +151,7 @@ Atau lewat file: `cp .env.example .env`, isi `OPENAI_API_KEY`, lalu `docker comp
 **Ganti key / hentikan:** jalankan ulang perintah di atas dengan key baru (container dibuat ulang otomatis),
 atau `docker compose down` untuk menghentikan.
 
-### 3. Pantau Log (opsional)
+### 4. Pantau Log (opsional)
 
 ```bash
 docker compose logs -f
