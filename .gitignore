@@ -14,8 +14,6 @@ build/
 venv/
 env/
 
-# Environment variables (JANGAN commit API key!)
-.env
 
 # Data & index (generated)
 data/index/
