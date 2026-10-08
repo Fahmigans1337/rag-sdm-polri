@@ -131,6 +131,8 @@ class LLM:
             except LLMError as e:
                 log.warning("Gemini %s gagal: %s", model, e)
                 errors.append(f"{model}: {e}")
+                if any(code in str(e) for code in ("HTTP 401", "HTTP 403")):
+                    break  # key tidak valid -> model lain pasti gagal juga
         raise LLMError("Semua model Gemini gagal | " + " | ".join(errors))
 
     # -- OpenAI-compatible

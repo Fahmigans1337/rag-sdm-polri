@@ -1,4 +1,4 @@
-"""Retrieval hibrida: BM25 (leksikal) + embedding multibahasa (semantik) + Reciprocal Rank Fusion.
+﻿"""Retrieval hibrida: BM25 (leksikal) + embedding multibahasa (semantik) + Reciprocal Rank Fusion.
 
 Juga menyediakan *routing dokumen* agar konteks dari dokumen yang tidak relevan
 tidak ikut terbawa ke jawaban.
@@ -270,18 +270,22 @@ class KnowledgeIndex:
 
     # ---------- build
     def build(self, chunks: list[Chunk], aliases: dict[str, list[str]] | None = None) -> None:
+        """Bangun index. BM25 selalu langsung siap; vektor hanya bila embedder SUDAH dimuat
+        (embedder dimuat di background agar startup tidak menunggu unduhan model)."""
         self.chunks = chunks
         self.aliases = {k: [a.lower() for a in v] for k, v in (aliases or {}).items()}
         self.bm25 = BM25([tokenize(c.embed_text) for c in chunks]) if chunks else None
-        if self.embedder is None:
-            self.embedder = Embedder()
-        if chunks and self.embedder.ready:
+        if chunks and self.embedder is not None and self.embedder.ready:
             vecs = self._embed_cached([c.embed_text for c in chunks])
             self.store.build(vecs, [c.doc_id for c in chunks])
         log.info(
             "Index siap: %d chunk | BM25 | embedding=%s | vector store=%s",
-            len(chunks), self.embedder.name if self.embedder.ready else "nonaktif", self.store.backend,
+            len(chunks), self.embedder.name if self.dense_ready else "nonaktif", self.store.backend,
         )
+
+    @property
+    def dense_ready(self) -> bool:
+        return bool(self.embedder is not None and self.embedder.ready and self.store.matrix is not None)
 
     def _embed_cached(self, texts: list[str]) -> np.ndarray:
         """Cache embedding ke disk (kunci = model + hash isi) agar start berikutnya instan."""
@@ -301,7 +305,7 @@ class KnowledgeIndex:
 
     @property
     def mode(self) -> str:
-        return "hybrid (BM25 + embedding)" if self.embedder and self.embedder.ready else "BM25"
+        return "hybrid (BM25 + embedding)" if self.dense_ready else "BM25"
 
     # ---------- coverage
     def _coverage(self, q_terms: list[str], chunk_idx: int) -> float:
@@ -353,7 +357,7 @@ class KnowledgeIndex:
         bm = self.bm25.scores(ext_terms)
         dense = np.full(n, np.nan)
         dense_rank: dict[int, int] = {}
-        if self.embedder and self.embedder.ready:
+        if self.dense_ready:
             qtext = query if not extra_context or len(q_terms) >= 4 else f"{extra_context} {query}"
             qvec = self.embedder.encode([qtext])[0]
             for r, (i, sim) in enumerate(self.store.search(qvec, min(40, n))):
@@ -373,7 +377,7 @@ class KnowledgeIndex:
         for i, r in dense_rank.items():
             fused[i] += 1.0 / (K + r)
 
-        use_dense = bool(self.embedder and self.embedder.ready)
+        use_dense = self.dense_ready
         hits_all: list[Hit] = []
         for i, sc in fused.items():
             hits_all.append(

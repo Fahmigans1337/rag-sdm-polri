@@ -11,7 +11,7 @@ from pathlib import Path
 from .config import settings
 from .ingest import ParsedDoc, _load_catalog, parse_file, slugify
 from .llm import LLM, LLMError
-from .retrieval import Hit, KnowledgeIndex, tokenize
+from .retrieval import Embedder, Hit, KnowledgeIndex, tokenize
 
 log = logging.getLogger("rag.engine")
 
@@ -88,6 +88,7 @@ class RAGEngine:
         self._lock = threading.RLock()
         self.ready = False
         self.error: str | None = None
+        self.llm_error: str | None = None  # galat LLM terakhir (None = terakhir sukses)
 
     # ------------------------------------------------------------------ ingest
     def _aliases(self) -> dict[str, list[str]]:
@@ -122,6 +123,51 @@ class RAGEngine:
         except Exception as e:  # noqa: BLE001
             self.error = f"{type(e).__name__}: {e}"
             log.exception("Gagal membangun index")
+            return
+        if settings.EMBEDDING_BACKEND != "none":
+            threading.Thread(target=self._upgrade_dense, daemon=True, name="embedder").start()
+
+    def _upgrade_dense(self) -> None:
+        """Muat model embedding di background (butuh internet saat pertama kali). Gagal -> tetap BM25."""
+        try:
+            emb = Embedder()
+            if not emb.ready:
+                self.index.embedder = emb  # simpan pesan error untuk /api/health
+                return
+            self.index.embedder = emb
+            self.rebuild()  # bangun vektor lalu tukar index secara atomik
+            log.info("Retrieval di-upgrade ke hybrid (BM25 + embedding)")
+        except Exception as e:  # noqa: BLE001
+            log.warning("Upgrade embedding dilewati, tetap BM25 (%s: %s)", type(e).__name__, e)
+
+    def _gen(self, system: str, user: str) -> str:
+        """Panggil LLM sambil mencatat status terakhir (dipakai /api/health)."""
+        try:
+            out = self.llm.generate(system, user)
+        except LLMError as e:
+            self.llm_error = str(e)[:300]
+            raise
+        self.llm_error = None
+        return out
+
+    @staticmethod
+    def _llm_down_message(err: str) -> str:
+        if "401" in err or "403" in err:
+            reason = "API key Gemini **tidak valid atau sudah kedaluwarsa** (HTTP 401/403)"
+        elif "429" in err:
+            reason = "kuota API Gemini habis / terlalu banyak permintaan (HTTP 429)"
+        elif "belum diisi" in err or "tidak dikonfigurasi" in err:
+            reason = "`GEMINI_API_KEY` belum diisi"
+        else:
+            reason = "layanan Gemini tidak dapat dihubungi (cek koneksi internet)"
+        return (
+            f"⚠️ **Mode AI sedang offline** — {reason}.\n\n"
+            "**Cara memperbaiki:** isi `GEMINI_API_KEY` yang valid di file `.env` "
+            "(buat gratis di https://aistudio.google.com/apikey), lalu jalankan "
+            "`docker compose up -d --force-recreate`.\n\n"
+            "Sementara itu pencarian dokumen tanpa AI tetap berfungsi — "
+            "coba tanyakan hal spesifik tentang isi dokumen (mis. persyaratan SBP atau penilaian kinerja)."
+        )
 
     def add_file(self, path: Path) -> ParsedDoc:
         doc = parse_file(path)
@@ -190,8 +236,8 @@ class RAGEngine:
             "documents": len(self.docs),
             "chunks": len(self.index.chunks),
             "retrieval": self.index.mode,
-            "vector_store": self.index.store.backend if self.index.embedder and self.index.embedder.ready else None,
-            "embedding_model": self.index.embedder.name if self.index.embedder and self.index.embedder.ready else None,
+            "vector_store": self.index.store.backend if self.index.dense_ready else None,
+            "embedding_model": self.index.embedder.name if self.index.dense_ready else None,
             "embedding_error": self.index.embedder.error if self.index.embedder else None,
             "llm": self.llm.provider,
             "llm_model": self.llm.model,
@@ -340,15 +386,20 @@ class RAGEngine:
                 doc_hint = "\n\nCatatan: knowledge base tersedia berisi: " + ", ".join(d.short for d in self.docs.values())
                 user_prompt += doc_hint
             try:
-                text = self.llm.generate(SYSTEM_PROMPT_GENERAL, user_prompt)
+                text = self._gen(SYSTEM_PROMPT_GENERAL, user_prompt)
                 meta["mode"] = "general"
                 meta["llm_model"] = getattr(self.llm, "_last_model", "")
                 return done(Answer(text.strip(), True, [], meta))
             except LLMError as e:
                 log.error("LLM general gagal: %s", e)
                 meta["llm_error"] = str(e)[:200]
-                # Fallback ke NOT_FOUND jika LLM gagal
-                return done(Answer(NOT_FOUND_ANSWER.format(docs=doc_names), False, meta=meta))
+                # Coba jawab dari dokumen tanpa LLM bila ada potongan yang cukup mirip
+                if hits and max(h.coverage for h in hits) >= 0.3:
+                    text, used = self._extractive(hits, q_terms)
+                    if text:
+                        meta["llm"] = "extractive (fallback)"
+                        return done(Answer(text, True, self._to_sources(hits, q_terms, used), meta))
+                return done(Answer(self._llm_down_message(str(e)), False, meta=meta))
 
         # ── Mode NOT_FOUND: tidak relevan, LLM tidak tersedia ──
         if not is_relevant:
@@ -364,7 +415,7 @@ class RAGEngine:
                 ) + "\n\n"
             user_prompt = f"{convo}KONTEKS:\n{self._context(hits)}\n\nPERTANYAAN: {standalone}\n\nJAWABAN:"
             try:
-                text = self.llm.generate(SYSTEM_PROMPT_RAG, user_prompt)
+                text = self._gen(SYSTEM_PROMPT_RAG, user_prompt)
                 meta["mode"] = "rag"
                 meta["llm_model"] = getattr(self.llm, "_last_model", "")
             except LLMError as e:
@@ -386,7 +437,7 @@ class RAGEngine:
                                 f"{'Pengguna' if m.get('role') == 'user' else 'Asisten'}: {m.get('content', '')[:200]}"
                                 for m in history[-4:]
                             ) + "\n\n"
-                        gen_text = self.llm.generate(SYSTEM_PROMPT_GENERAL, f"{convo2}Pertanyaan: {standalone}")
+                        gen_text = self._gen(SYSTEM_PROMPT_GENERAL, f"{convo2}Pertanyaan: {standalone}")
                         meta["mode"] = "general_fallback"
                         return done(Answer(gen_text.strip(), True, [], meta))
                     except LLMError:

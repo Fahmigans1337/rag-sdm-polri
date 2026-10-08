@@ -15,9 +15,8 @@ venv/
 env/
 
 
-# Data & index (generated)
+# Index (generated). data/ocr/ SENGAJA ikut di-commit: sidecar OCR dokumen scan
 data/index/
-data/ocr/
 
 # Logs
 *.log
