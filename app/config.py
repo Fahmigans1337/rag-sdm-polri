@@ -70,6 +70,9 @@ class Settings:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "")
     OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    # Khusus OpenRouter: model cadangan otomatis (dipisah koma, maks. 2) bila model utama gagal/sibuk
+    OPENAI_FALLBACK_MODELS: str = os.getenv("OPENAI_FALLBACK_MODELS", "")
+    OPENAI_FALLBACK_MODELS: str = os.getenv("OPENAI_FALLBACK_MODELS", "")
     LLM_TIMEOUT: float = float(os.getenv("LLM_TIMEOUT", "25"))
 
     AUTO_INGEST: bool = _bool("AUTO_INGEST", True)

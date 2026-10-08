@@ -157,12 +157,21 @@ class LLM:
     def _openai(self, system: str, user: str, temperature: float, max_tokens: int) -> str:
         base = (settings.OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
         headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY or 'ollama'}"}
+        is_openrouter = "openrouter.ai" in base
+        if is_openrouter:
+            headers["HTTP-Referer"] = "https://github.com/Fahmigans1337/rag-sdm-polri"
+            headers["X-Title"] = "RAG SDM Polri"
         body = {
             "model": settings.OPENAI_MODEL,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if is_openrouter:
+            fb = [m.strip() for m in settings.OPENAI_FALLBACK_MODELS.split(",") if m.strip()]
+            if fb:  # OpenRouter mencoba model berikutnya otomatis bila yang pertama gagal
+                body["models"] = [settings.OPENAI_MODEL] + fb[:2]
+
         def _post(b: dict) -> httpx.Response:
             try:
                 return httpx.post(f"{base}/chat/completions", json=b, headers=headers, timeout=settings.LLM_TIMEOUT)

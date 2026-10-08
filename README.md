@@ -115,7 +115,8 @@ Edit file `.env`:
 ```env
 LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-proj-xxxxxxxx
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL=openai/gpt-4o-mini
+OPENAI_FALLBACK_MODELS=google/gemini-2.5-flash-lite
 ```
 
 ### 3. Jalankan dengan Docker
