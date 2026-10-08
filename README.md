@@ -313,7 +313,7 @@ python scripts/debug_retrieval.py
 
 **Seleksi Kemampuan Pemrograman — Tahap 2**
 Topik: *Retrieval-Augmented Generation (RAG)*
-Periode: 8–14 Oktober 2026
+By: Bripda Zul Fahmi Rizki
 
 ---
 
