@@ -299,12 +299,31 @@ body{
 }
 
 /* Messages */
-.msgs{flex:1;overflow-y:auto;padding:24px 24px 12px;scroll-behavior:smooth}
+.msgs{flex:1;overflow-y:auto;padding:24px 24px 12px;scroll-behavior:smooth;position:relative}
+
+/* Watermark di tengah area chat */
+.msgs::before{
+  content:'';
+  position:fixed;
+  top:50%;left:calc(50% + 160px);/* 160px = kompensasi sidebar */
+  transform:translate(-50%,-50%);
+  width:min(620px,70vw);height:calc(min(620px,70vw) * .362);
+  background:url('/static/img/polisi-bersama.png') center/contain no-repeat;
+  opacity:0.10;
+  pointer-events:none;
+  z-index:0;
+  filter:brightness(2.1) saturate(1.15);
+  transition:opacity .3s;
+}
+
+/* Watermark lebih terang ketika tidak ada welcome screen (saat chat aktif) */
+.msgs.has-chat::before{opacity:0.13}
 
 /* Welcome screen */
 .welcome{
   max-width:800px;margin:4vh auto 0;text-align:center;
   animation:fadeUp .5s ease both;
+  position:relative;z-index:1;
 }
 @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 .hero{
@@ -368,6 +387,7 @@ body{
   display:flex;gap:12px;
   max-width:860px;margin:0 auto 20px;
   animation:fadeUp .28s ease both;
+  position:relative;z-index:1;
 }
 .msg.user{flex-direction:row-reverse}
 .avatar{
@@ -460,15 +480,15 @@ body{
 }
 
 /* Score bars (RAGFlow-style) */
-.scores{display:flex;flex-wrap:wrap;gap:5px 14px;padding:0 12px 8px}
-.sc{display:flex;align-items:center;gap:7px;font-family:Consolas,monospace;font-size:9.5px}
-.sc i{font-style:normal;letter-spacing:.08em;color:rgba(140,160,195,.5);width:50px}
-.sc track{display:block;width:56px;height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden}
-.sc fill{display:block;height:100%;border-radius:2px}
-.sc.kw fill{background:#f5c107;box-shadow:0 0 8px rgba(245,193,7,.5)}
-.sc.vc fill{background:#22d3ee;box-shadow:0 0 8px rgba(34,211,238,.5)}
-.sc.rr fill{background:#10b981;box-shadow:0 0 8px rgba(16,185,129,.5)}
-.sc em{font-style:normal;color:#dde4ef;width:28px;text-align:right}
+.scores{display:flex;flex-wrap:wrap;gap:6px 18px;padding:0 12px 9px}
+.sc{display:flex;align-items:center;gap:8px;font-family:Consolas,monospace;font-size:10.5px;white-space:nowrap}
+.sc i{font-style:normal;letter-spacing:.1em;color:rgba(150,170,205,.65);min-width:58px}
+.sc .trk{display:block;width:64px;height:5px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden}
+.sc .fl{display:block;height:100%;border-radius:3px}
+.sc.kw .fl{background:#f5c107;box-shadow:0 0 8px rgba(245,193,7,.5)}
+.sc.vc .fl{background:#22d3ee;box-shadow:0 0 8px rgba(34,211,238,.5)}
+.sc.rr .fl{background:#10b981;box-shadow:0 0 8px rgba(16,185,129,.5)}
+.sc em{font-style:normal;color:#dde4ef;min-width:34px;text-align:right}
 
 .src-snip{
   font-size:13.5px;color:rgba(160,175,210,.75);
@@ -663,6 +683,7 @@ body{
 
 /* ── RESPONSIVE ─────────────────────────── */
 @media(max-width:860px){
+  .msgs::before{left:50%}
   .app{grid-template-columns:minmax(0,1fr)}
   .sidebar{
     position:fixed;inset:0 auto 0 0;width:min(88vw,320px);
@@ -900,6 +921,17 @@ function showToast(txt,ms=2000){
   el.toast.textContent=txt;el.toast.hidden=false;
   clearTimeout(el.toast._t);el.toast._t=setTimeout(()=>{el.toast.hidden=true},ms);
 }
+function copyText(txt){
+  const ok=()=>showToast('Jawaban disalin ✓');
+  const fallback=()=>{
+    const t=document.createElement('textarea');t.value=txt;t.style.position='fixed';t.style.opacity='0';
+    document.body.appendChild(t);t.select();
+    try{document.execCommand('copy');ok();}catch(_){showToast('Gagal menyalin');}
+    t.remove();
+  };
+  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(txt).then(ok,fallback);
+  else fallback();
+}
 function mdToHtml(t){
   return (t||'')
     .replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
@@ -913,7 +945,7 @@ function pageLabel(s){return s.page_start===s.page_end?`Hal. ${s.page_start}`:`H
 function scoreBar(label,val,cls){
   if(val==null)return'';
   const pct=Math.min(100,Math.round(val*100));
-  return `<div class="sc ${cls}"><i>${label}</i><track><fill style="width:${pct}%"></fill></track><em>${pct}%</em></div>`;
+  return `<div class="sc ${cls}"><i>${label}</i><span class="trk"><span class="fl" style="width:${pct}%"></span></span><em>${pct}%</em></div>`;
 }
 function scoreBars(sc){
   if(!sc)return'';
@@ -980,18 +1012,22 @@ function renderMsg(m,replay=false){
     renderSources(m,bub);
     if(m.meta){
       const meta=h('div','msg-meta');
-      const llm=m.meta.llm||'—';const ms=m.meta.latency_ms;
+      const llm=(m.meta.llm_model||m.meta.llm||'—')+(m.meta.mode?' · '+String(m.meta.mode).replace('_fallback','').toUpperCase():'');const ms=m.meta.latency_ms;
       const docs=(m.meta.routed_docs||[]).join(', ');
       meta.innerHTML=`<span>LLM: ${esc(llm)}</span>${ms!=null?`<span>${(ms/1000).toFixed(1)} DTK</span>`:''}`+
-        `${docs?`<span>DOC: ${esc(docs)}</span>`:''}`+
-        `<button type="button" onclick="navigator.clipboard.writeText(${JSON.stringify(m.content||'')}).then(()=>showToast?.('Disalin!'))">⎘ SALIN</button>`;
+        `${docs?`<span>DOC: ${esc(docs)}</span>`:''}`;
+      const cp=document.createElement('button');
+      cp.type='button';cp.textContent='📋 SALIN';
+      cp.addEventListener('click',()=>copyText(m.content||''));
+      meta.appendChild(cp);
       wrap.appendChild(meta);
     }
   } else {
     bub.textContent=m.content;
   }
 
-  if(el.welcome&&!replay)el.welcome.remove(),el.welcome=null;
+  if(el.welcome)el.welcome.remove(),el.welcome=null;
+  el.msgs.classList.add('has-chat');
   el.msgs.appendChild(row);
   if(!replay)scrollDown();
   return row;
@@ -1052,6 +1088,7 @@ const WELCOME_HTML = document.getElementById('welcome')?.innerHTML || '';
 $('btnNew').addEventListener('click',()=>{
   state.chat=[];sessionStorage.removeItem(STORE);
   el.msgs.innerHTML='';
+  el.msgs.classList.remove('has-chat');
   const w2=createWelcome();el.msgs.appendChild(w2);el.welcome=w2;
   el.ta.focus();
 });

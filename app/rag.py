@@ -37,7 +37,7 @@ Aturan:
 2. Jika pertanyaan berkaitan dengan kebijakan SDM Polri atau dokumen internal Polri, \
 sarankan pengguna untuk menanyakan hal spesifik agar bisa dicari di knowledge base.
 3. Jangan berpura-pura memiliki akses ke data internal Polri jika tidak ada di konteks.
-4. Untuk sapaan/percakapan umum, balas secara natural dan hangat."""
+4. Jawab langsung ke inti pertanyaan. Jangan memulai dengan sapaan (\"Halo\", \"Selamat pagi\", dll) kecuali pengguna menyapa lebih dulu."""
 
 NOT_FOUND_ANSWER = (
     "Maaf, informasi tersebut **tidak ditemukan** pada knowledge base yang tersedia"
@@ -223,8 +223,8 @@ class RAGEngine:
             return False
         best = max(hits, key=lambda h: h.relevance)
         if best.dense is None:
-            # BM25-only: threshold sedikit di atas MIN_COVERAGE
-            return best.coverage >= settings.MIN_COVERAGE + 0.12
+            # BM25-only: false positive aman, LLM akan fallback ke mode general bila konteks tak memuat jawaban
+            return best.coverage >= settings.MIN_COVERAGE
         strong_semantic = best.dense >= 0.55 and best.coverage >= 0.2
         return (best.coverage >= settings.MIN_COVERAGE and best.dense >= settings.MIN_DENSE_SIM) or strong_semantic
 

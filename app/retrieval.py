@@ -30,6 +30,8 @@ STOPWORDS = set(
     dibawah diatas nomor bulan hari tanggal halaman ayat lampiran
     presiden wakil gubernur bupati walikota menteri jenderal sekretaris direktur kepala
     jelaskan ceritakan uraikan deskripsikan sebutkan bagikan sampaikan
+    menurut mengenai terkait berdasarkan perihal seputar bagaimanakah apakah
+    indonesia republik negara nasional umum resmi pertama kedua ketiga sesuai tahun pasal
     """.split()
 )
 
@@ -305,11 +307,21 @@ class KnowledgeIndex:
     def _coverage(self, q_terms: list[str], chunk_idx: int) -> float:
         assert self.bm25 is not None
         uniq = set(q_terms)
-        total = sum(self.bm25.idf_of(t) for t in uniq)
+        if not uniq:
+            return 0.0
+        unseen = [t for t in uniq if t not in self.bm25.idf]
+        # Singkatan rujukan (mis. "perpol", "1/2025") dibobot ringan, tetapi hanya bila mayoritas
+        # token kueri dikenal korpus; kueri didominasi token asing (di luar dokumen) tetap ketat.
+        unseen_w = 0.2 * self.bm25.max_idf if len(unseen) / len(uniq) < 0.5 else self.bm25.max_idf
+
+        def w(t: str) -> float:
+            return self.bm25.idf[t] if t in self.bm25.idf else unseen_w
+
+        total = sum(w(t) for t in uniq)
         if total <= 0:
             return 0.0
         have = self.bm25.tf[chunk_idx]
-        got = sum(self.bm25.idf_of(t) for t in uniq if t in have)
+        got = sum(w(t) for t in uniq if t in have)
         return got / total
 
     # ---------- routing
