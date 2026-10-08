@@ -1104,10 +1104,12 @@ function createWelcome(){
 
 // ── Status & docs ──
 function renderStatus(s){
-  el.live.className='live-badge'+(s.ready?' ready':s.error?' error':'');
-  el.liveText.textContent=s.ready?'SIAP':s.error?'ERROR':'Menyiapkan…';
+  const off=!!s.llm_error;
+  el.live.className='live-badge'+(s.ready&&!off?' ready':(s.error||off)?' error':'');
+  el.live.title=off?('AI offline: '+s.llm_error):'';
+  el.liveText.textContent=s.ready?(off?'SIAP · AI OFFLINE':'SIAP'):s.error?'ERROR':'Menyiapkan…';
   el.statChips.innerHTML='';
-  [['Dokumen',s.docs||0],['Potongan',s.chunks||0],['Retrieval',s.retrieval||'—'],['LLM',`${s.llm||'—'}${s.llm_model?' · '+s.llm_model:''}`]].forEach(([k,v])=>{
+  [['Dokumen',s.docs||0],['Potongan',s.chunks||0],['Retrieval',s.retrieval||'—'],['LLM',off?'OFFLINE (cek API key)':`${s.llm||'—'}${s.llm_model?' · '+s.llm_model:''}`]].forEach(([k,v])=>{
     const c=h('div','stat-chip');c.innerHTML=`<span>${k}</span><b>${esc(String(v))}</b>`;
     el.statChips.appendChild(c);
   });

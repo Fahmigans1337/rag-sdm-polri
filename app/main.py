@@ -65,6 +65,7 @@ def health():
             "retrieval": st.get("retrieval", "BM25"),
             "llm": st.get("llm", "gemini"),
             "llm_model": st.get("llm_model", ""),
+            "llm_error": engine.llm_error,
         },
     }
 

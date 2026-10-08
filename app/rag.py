@@ -151,6 +151,26 @@ class RAGEngine:
         return out
 
     @staticmethod
+    def _smalltalk(question: str) -> str:
+        """Jawaban lokal untuk basa-basi saat LLM offline. Kosong bila bukan basa-basi."""
+        q = re.sub(r"[^a-z0-9 ]", " ", question.lower()).strip()
+        words = q.split()
+        if not words or len(words) > 6:
+            return ""
+        hint = (
+            "Saat ini mode AI sedang offline, tetapi pencarian dokumen tetap berfungsi. "
+            "Silakan tanyakan hal spesifik, misalnya *persyaratan SBP T.A. 2027* atau "
+            "*ketentuan penilaian kinerja anggota Polri*."
+        )
+        if words[0] in {"halo", "hai", "hallo", "hello", "hi", "p", "selamat", "assalamualaikum", "permisi"}:
+            return f"Halo! Saya asisten informasi SDM Polri. {hint}"
+        if "terima" in words or "makasih" in words or "thanks" in words:
+            return "Sama-sama! Jika ada pertanyaan lain tentang dokumen SDM Polri, silakan tanyakan."
+        if "siapa" in words and ("kamu" in words or "anda" in words):
+            return f"Saya asisten informasi SDM Polri yang menjawab berdasarkan dokumen resmi beserta sumbernya. {hint}"
+        return ""
+
+    @staticmethod
     def _llm_down_message(err: str) -> str:
         if "401" in err or "403" in err:
             reason = "API key Gemini **tidak valid atau sudah kedaluwarsa** (HTTP 401/403)"
@@ -399,7 +419,12 @@ class RAGEngine:
                     if text:
                         meta["llm"] = "extractive (fallback)"
                         return done(Answer(text, True, self._to_sources(hits, q_terms, used), meta))
-                return done(Answer(self._llm_down_message(str(e)), False, meta=meta))
+                small = self._smalltalk(question)
+                if small:
+                    meta["mode"] = "offline"
+                    return done(Answer(small, True, [], meta))
+                meta["mode"] = "offline"
+                return done(Answer(self._llm_down_message(str(e)), True, [], meta))
 
         # ── Mode NOT_FOUND: tidak relevan, LLM tidak tersedia ──
         if not is_relevant:
