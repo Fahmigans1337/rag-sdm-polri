@@ -180,15 +180,20 @@ class RAGEngine:
             reason = "terlalu banyak permintaan / kuota API terlampaui (HTTP 429), coba lagi sebentar"
         elif "belum diisi" in err or "tidak dikonfigurasi" in err:
             reason = "API key belum diisi"
+        elif "404" in err:
+            reason = "**model AI tidak tersedia** untuk key ini (HTTP 404) - sistem mencoba menemukan model yang aktif secara otomatis, coba kirim pertanyaan lagi"
+        elif "dijeda" in err:
+            reason = "model AI sedang dijeda sementara setelah gagal berulang, coba lagi sebentar"
         else:
             reason = "layanan AI tidak dapat dihubungi (cek koneksi internet)"
         return (
             f"⚠️ **Mode AI sedang offline** - {reason}.\n\n"
-            "**Cara memperbaiki:** isi `OPENAI_API_KEY` (atau `GEMINI_API_KEY`) yang valid di file `.env`, "
-            "lalu jalankan `docker compose up -d --force-recreate`.\n\n"
+            "**Cara memperbaiki:** klik tombol **🔑 API KEY** di bagian atas lalu tempel key yang valid "
+            "(atau isi `OPENAI_API_KEY` / `GEMINI_API_KEY` di file `.env` lalu `docker compose up -d --force-recreate`).\n\n"
             "Sementara itu pencarian dokumen tanpa AI tetap berfungsi - "
             "coba tanyakan hal spesifik tentang isi dokumen (mis. persyaratan SBP atau penilaian kinerja)."
         )
+
     def add_file(self, path: Path) -> ParsedDoc:
         doc = parse_file(path)
         if not doc.chunks:

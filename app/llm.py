@@ -25,7 +25,7 @@ class LLMInfo:
     model: str
 
 
-# â”€â”€â”€ Registry semua provider yang didukung â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Registry semua provider yang didukung ────────────────────────────────────
 PROVIDERS = {
     "openrouter": {
         "name": "OpenRouter",
@@ -106,6 +106,7 @@ class LLM:
         self.api_key: str = ""
         self.base_url: str = ""
         self._cooldown: dict[str, float] = {}
+        self._gem_models: Optional[list[str]] = None
 
         # Inisialisasi dari environment variable
         self._init_from_env()
@@ -134,6 +135,7 @@ class LLM:
         self.model = model or p["default_model"]
         self._last_model = self.model
         self._cooldown = {}
+        self._gem_models = None
 
     @property
     def provider(self) -> str:
@@ -151,22 +153,60 @@ class LLM:
     def info(self) -> LLMInfo:
         return LLMInfo(self.provider_name, self.model)
 
+    def _discover_gemini_models(self) -> list[str]:
+        """Ambil daftar model Gemini yang benar-benar tersedia untuk key ini (nama model sering diganti Google)."""
+        try:
+            r = httpx.get(
+                f"{PROVIDERS['gemini']['base_url']}/models?pageSize=200",
+                headers={"x-goog-api-key": self.api_key}, timeout=15,
+            )
+            if r.status_code != 200:
+                return []
+            cands = []
+            for m in r.json().get("models", []):
+                name = m.get("name", "").removeprefix("models/")
+                if "generateContent" not in m.get("supportedGenerationMethods", []):
+                    continue
+                if not name.startswith("gemini-") or "flash" not in name:
+                    continue
+                if re.search(r"image|tts|live|audio|embed|thinking|exp|8b|robotics|computer|custom|learnlm", name):
+                    continue
+                v = re.match(r"gemini-(\d+(?:\.\d+)?)", name)
+                ver = float(v.group(1)) if v else 0.0
+                cands.append((-ver, "preview" in name, "lite" in name, name))
+            cands.sort()
+            found = [c[3] for c in cands][:4]
+            log.info("Model Gemini tersedia: %s", found)
+            return found
+        except (httpx.HTTPError, ValueError, KeyError) as e:
+            log.warning("Gagal mengambil daftar model Gemini: %s", type(e).__name__)
+            return []
+
     def generate(self, system: str, user: str, temperature: float = 0.2, max_tokens: int = 1500) -> str:
         if not self.enabled:
-            raise LLMError("LLM tidak dikonfigurasi. Tempel API key via tombol ðŸ”‘ API KEY.")
+            raise LLMError("LLM tidak dikonfigurasi. Tempel API key via tombol API KEY.")
 
         p = PROVIDERS.get(self.provider_name)
         if not p:
             raise LLMError(f"Provider tidak dikenal: {self.provider_name}")
 
         protocol = p["protocol"]
-        fallbacks = p.get("fallback_models", [])
-        models_to_try = [self.model] + [m for m in fallbacks if m != self.model]
+        static = [self.model] + [m for m in p.get("fallback_models", []) if m != self.model]
+        if protocol == "gemini":
+            if self._gem_models is None:
+                self._gem_models = self._discover_gemini_models()
+                if self._gem_models:
+                    self._cooldown = {}
+            models_to_try = self._gem_models + [m for m in static if m not in self._gem_models]
+        else:
+            models_to_try = static
 
         errors: list[str] = []
+        skipped = 0
         for model in models_to_try:
             now = time.time()
             if self._cooldown.get(model, 0) > now:
+                skipped += 1
                 continue
             try:
                 if protocol == "gemini":
@@ -184,11 +224,16 @@ class LLM:
                 # Kalau error auth, tidak perlu coba model lain
                 if any(code in str(e) for code in ("HTTP 401", "HTTP 403")):
                     break
-        raise LLMError(f"Semua model gagal | " + " | ".join(errors))
+        if protocol == "gemini" and self._gem_models is not None and errors and all("HTTP 404" in e for e in errors):
+            self._gem_models = None  # semua model 404: daftar model berubah, temukan ulang pada panggilan berikutnya
+        if not errors and skipped:
+            raise LLMError("Semua model sedang dijeda sementara setelah gagal berulang; coba lagi sebentar.")
+        raise LLMError("Semua model gagal | " + " | ".join(errors))
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    # ──────────────────────────────────────────────────────────────
     # Protocol: OpenAI-compatible (OpenAI, OpenRouter, Groq, Mistral)
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ──────────────────────────────────────────────────────────────
     def _call_openai_compat(self, model: str, system: str, user: str, temperature: float, max_tokens: int) -> str:
         base = self.base_url.rstrip("/")
         headers: dict = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
@@ -241,9 +286,9 @@ class LLM:
         except (KeyError, IndexError) as e:
             raise LLMError(f"Respons tidak terduga: {r.text[:300]}") from e
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ──────────────────────────────────────────────────────────────
     # Protocol: Anthropic (Claude)
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ──────────────────────────────────────────────────────────────
     def _call_anthropic(self, model: str, system: str, user: str, temperature: float, max_tokens: int) -> str:
         headers = {
             "x-api-key": self.api_key,
@@ -271,9 +316,9 @@ class LLM:
         except (KeyError, IndexError) as e:
             raise LLMError(f"Respons Anthropic tidak terduga: {r.text[:300]}") from e
 
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ──────────────────────────────────────────────────────────────
     # Protocol: Google Gemini
-    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # ──────────────────────────────────────────────────────────────
     def _call_gemini(self, model: str, system: str, user: str, temperature: float, max_tokens: int) -> str:
         base = PROVIDERS["gemini"]["base_url"]
         url = f"{base}/models/{model}:generateContent"
@@ -303,7 +348,7 @@ class LLM:
             raise LLMError(f"Respons Gemini tidak terduga: {r.text[:300]}") from e
 
 
-# â”€â”€â”€ Fungsi utilitas API key dari UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Fungsi utilitas API key dari UI ─────────────────────────────────────────
 
 def _key_file():
     return settings.INDEX_DIR / "llm_key.json"
