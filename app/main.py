@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import settings
-from .llm import LLMError, apply_key, load_saved_key
+from .llm import LLMError, apply_key, load_saved_key, detect_provider, PROVIDERS
 from .rag import RAGEngine
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -25,15 +25,15 @@ MAX_UPLOAD_MB = 60
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if load_saved_key():  # key yang ditempel lewat UI (tersimpan di volume)
-        engine.llm.provider = "openai"
-        engine.llm.model = settings.OPENAI_MODEL
+    if load_saved_key(target=engine.llm):  # key yang ditempel lewat UI (tersimpan di volume)
+        log.info("Key dari storage dimuat: provider=%s model=%s", engine.llm.provider_name, engine.llm.model)
     # Bangun index di thread terpisah agar server langsung merespons (/api/health menunjukkan status).
     if settings.AUTO_INGEST:
         threading.Thread(target=engine.load_all, daemon=True, name="ingest").start()
     else:
         engine.ready = True
     yield
+
 
 
 app = FastAPI(
@@ -59,6 +59,7 @@ class ChatRequest(BaseModel):
 @app.get("/api/health", tags=["Sistem"])
 def health():
     st = engine.status()
+    p = PROVIDERS.get(engine.llm.provider_name, {})
     return {
         "docs": engine.list_docs(),
         "status": {
@@ -67,29 +68,37 @@ def health():
             "docs": st["documents"],
             "chunks": st["chunks"],
             "retrieval": st.get("retrieval", "BM25"),
-            "llm": st.get("llm", "openai"),
-            "llm_model": st.get("llm_model", ""),
+            "llm": engine.llm.provider_name,
+            "llm_name": p.get("name", engine.llm.provider_name),
+            "llm_model": engine.llm.model,
             "llm_error": engine.llm_error,
-            "llm_configured": bool(settings.OPENAI_API_KEY or settings.GEMINI_API_KEY),
+            "llm_configured": engine.llm.enabled,
         },
     }
 
 
 class KeyRequest(BaseModel):
     key: str = Field(min_length=8, max_length=300)
+    provider: str = Field(default="")  # opsional: override deteksi otomatis
 
 
 @app.post("/api/llm-key", tags=["Sistem"])
 def set_llm_key(req: KeyRequest):
-    """Pasang API key LLM dari UI (OpenRouter sk-or-..., OpenAI sk-..., Groq gsk_...). Key tidak pernah dikembalikan."""
+    """Pasang API key LLM dari UI. Provider dikenali otomatis dari prefix key."""
     try:
-        msg = apply_key(req.key)
+        msg = apply_key(req.key, validate=True, provider_hint=req.provider or "", target=engine.llm)
     except LLMError as e:
         raise HTTPException(400, str(e)) from e
-    engine.llm.provider = "openai"
-    engine.llm.model = settings.OPENAI_MODEL
     engine.llm_error = None
-    return {"ok": True, "message": msg, "model": settings.OPENAI_MODEL}
+    p = PROVIDERS.get(engine.llm.provider_name, {})
+    return {
+        "ok": True,
+        "message": msg,
+        "provider": engine.llm.provider_name,
+        "provider_name": p.get("name", engine.llm.provider_name),
+        "model": engine.llm.model,
+    }
+
 
 @app.post("/api/chat", tags=["Chat"])
 def chat(req: ChatRequest):

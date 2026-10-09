@@ -297,6 +297,14 @@ body{
 }
 .topbar .btn-key:hover{background:rgba(245,193,7,.16);box-shadow:0 0 14px rgba(245,193,7,.25)}
 .topbar .btn-key+.live-badge{margin-left:0}
+.kprov-badge{
+  display:inline-block;font-family:Consolas,monospace;font-size:10.5px;
+  padding:3px 10px;border-radius:2px;cursor:default;
+  border:1px solid color-mix(in srgb, var(--c) 50%, transparent);
+  background:color-mix(in srgb, var(--c) 12%, transparent);
+  color:var(--c);letter-spacing:.04em;
+}
+
 .kmodal{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:20px}
 .kmodal[hidden]{display:none}
 .kmodal-bg{position:absolute;inset:0;background:rgba(2,6,14,.78);backdrop-filter:blur(3px)}
@@ -876,20 +884,32 @@ body{
 
 <div class="kmodal" id="keyModal" hidden role="dialog" aria-modal="true" aria-labelledby="keyTitle">
   <div class="kmodal-bg" id="keyBg"></div>
-  <div class="kmodal-box">
-    <h3 id="keyTitle">🔑 Aktifkan AI dengan API key Anda</h3>
-    <p>Tempel API key milik Anda agar jawaban AI aktif. Jenis key dikenali otomatis.</p>
-    <small>Didukung: OpenRouter <b>sk-or-v1-…</b> · OpenAI <b>sk-…</b> · Groq <b>gsk_…</b><br>
-    Key hanya disimpan di server lokal (container Docker) Anda dan tidak pernah ditampilkan kembali.
-    Tanpa key, pencarian dokumen tetap berfungsi (mode ekstraktif).</small>
-    <input id="keyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Tempel API key di sini…">
+  <div class="kmodal-box" style="width:min(580px,100%)">
+    <h3 id="keyTitle">🔑 Aktifkan AI — Tempel API Key Anda</h3>
+    <p>Tempel API key dari salah satu penyedia AI berikut. Jenis penyedia <b>dikenali otomatis</b> dari awalan key.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px">
+      <span class="kprov-badge" style="--c:#f5a623" title="sk-or-v1-...">🌐 OpenRouter</span>
+      <span class="kprov-badge" style="--c:#10b981" title="sk-...">⬛ OpenAI</span>
+      <span class="kprov-badge" style="--c:#f43f5e" title="gsk_...">⚡ Groq</span>
+      <span class="kprov-badge" style="--c:#8b5cf6" title="sk-ant-...">🔮 Anthropic</span>
+      <span class="kprov-badge" style="--c:#4285f4" title="AIza...">🔵 Gemini</span>
+      <span class="kprov-badge" style="--c:#ff7043" title="32 hex chars">🌀 Mistral</span>
+    </div>
+    <input id="keyInput" type="password" autocomplete="off" spellcheck="false"
+      placeholder="Tempel API key di sini… (sk-or-v1-… / sk-… / gsk_ / sk-ant-… / AIza… / mistral)">
+    <div id="keyDetected" style="min-height:20px;margin:6px 0;font-family:Consolas,monospace;font-size:11.5px;color:rgba(200,220,255,.6)"></div>
+    <small style="display:block;font-size:11.5px;color:rgba(140,160,195,.7);margin-bottom:10px;line-height:1.5">
+      Key disimpan di server lokal (container Docker) dan <b>tidak pernah</b> dikirim ke luar atau ditampilkan kembali.<br>
+      Tanpa key, pencarian dokumen tetap berfungsi (mode ekstraktif — tanpa AI).
+    </small>
     <div class="kmsg" id="keyMsg"></div>
     <div class="kbtns">
       <button type="button" class="k-cancel" id="keyCancel">Nanti</button>
-      <button type="button" class="k-save" id="keySave">Aktifkan</button>
+      <button type="button" class="k-save" id="keySave">Aktifkan AI</button>
     </div>
   </div>
 </div>
+
 
 <script>
 // ═══════════════════════════════════════════════════════
@@ -1158,18 +1178,8 @@ function createWelcome(){
   return d;
 }
 
-// ── Status & docs ──
-function renderStatus(s){
-  const off=!!s.llm_error;
-  el.live.className='live-badge'+(s.ready&&!off?' ready':(s.error||off)?' error':'');
-  el.live.title=off?('AI offline: '+s.llm_error):'';
-  el.liveText.textContent=s.ready?(off?'SIAP · AI OFFLINE':'SIAP'):s.error?'ERROR':'Menyiapkan…';
-  el.statChips.innerHTML='';
-  [['Dokumen',s.docs||0],['Potongan',s.chunks||0],['Retrieval',s.retrieval||'—'],['LLM',off?'OFFLINE (cek API key)':`${s.llm||'—'}${s.llm_model?' · '+s.llm_model:''}`]].forEach(([k,v])=>{
-    const c=h('div','stat-chip');c.innerHTML=`<span>${k}</span><b>${esc(String(v))}</b>`;
-    el.statChips.appendChild(c);
-  });
-}
+function renderStatus_OLD_DO_NOT_USE(){/* replaced below */}
+
 function renderDocs(){
   el.docCount.textContent=state.docs.length;
   el.docList.innerHTML='';
@@ -1280,23 +1290,64 @@ $('cxBg').addEventListener('click',closeCX);
 el.cxQ.addEventListener('input',renderCX);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!el.cxModal.hidden)closeCX();});
 
-// ── API key (tempel dari UI) ──
+// ── API key (tempel dari UI) — Multi-Provider ──
+const PROVIDER_INFO = {
+  'openrouter': {name:'OpenRouter', color:'#f5a623', hint:'sk-or-v1-…'},
+  'openai':     {name:'OpenAI',     color:'#10b981', hint:'sk-…'},
+  'groq':       {name:'Groq',       color:'#f43f5e', hint:'gsk_…'},
+  'anthropic':  {name:'Anthropic',  color:'#8b5cf6', hint:'sk-ant-…'},
+  'gemini':     {name:'Gemini',     color:'#4285f4', hint:'AIza…'},
+  'mistral':    {name:'Mistral',    color:'#ff7043', hint:'32 hex char'},
+};
+function detectProvider(k){
+  if(!k) return null;
+  if(k.startsWith('sk-or-')) return 'openrouter';
+  if(k.startsWith('sk-ant-')) return 'anthropic';
+  if(k.startsWith('AIza')) return 'gemini';
+  if(k.startsWith('gsk_')) return 'groq';
+  if(k.startsWith('sk-')) return 'openai';
+  if(/^[0-9a-zA-Z]{32}$/.test(k)) return 'mistral';
+  return null;
+}
 const keyModal=$('keyModal'),keyInput=$('keyInput'),keyMsg=$('keyMsg'),keySave=$('keySave');
+const keyDetected=$('keyDetected');
 function openKey(){
   keyModal.hidden=false;keyInput.value='';keyMsg.className='kmsg';keyMsg.textContent='';
+  if(keyDetected) keyDetected.textContent='';
   document.body.style.overflow='hidden';setTimeout(()=>keyInput.focus(),60);
 }
 function closeKey(){keyModal.hidden=true;document.body.style.overflow='';}
+keyInput.addEventListener('input',()=>{
+  if(!keyDetected) return;
+  const k=keyInput.value.trim();
+  const p=detectProvider(k);
+  if(p){
+    const pi=PROVIDER_INFO[p];
+    keyDetected.innerHTML=`<span style="color:${pi.color}">✓ Terdeteksi: <b>${pi.name}</b></span>`;
+  } else if(k.length>8){
+    keyDetected.innerHTML='<span style="color:rgba(239,68,68,.8)">? Jenis key belum dikenali — coba paste ulang</span>';
+  } else {
+    keyDetected.textContent='';
+  }
+});
 async function saveKey(){
   const k=keyInput.value.trim();
   if(k.length<12){keyMsg.className='kmsg err';keyMsg.textContent='✗ Key terlalu pendek. Tempel key lengkap.';return;}
-  keySave.disabled=true;keyMsg.className='kmsg';keyMsg.textContent='Memeriksa key ke penyedia…';
+  const pname=detectProvider(k);
+  keySave.disabled=true;
+  keyMsg.className='kmsg';
+  keyMsg.textContent=`Memeriksa key ke ${pname?PROVIDER_INFO[pname]?.name||pname:'penyedia'}…`;
   try{
-    const r=await fetch('/api/llm-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k})});
+    const r=await fetch('/api/llm-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k,provider:pname||''})});
     const d=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(typeof d.detail==='string'?d.detail:`Gagal (${r.status})`);
-    keyInput.value='';keyMsg.className='kmsg ok';keyMsg.textContent='✓ '+d.message;
-    await loadDocs();showToast('AI aktif');setTimeout(closeKey,1000);
+    keyInput.value='';
+    const pi=pname?PROVIDER_INFO[pname]:null;
+    keyMsg.className='kmsg ok';
+    keyMsg.textContent=`✓ ${d.message}`;
+    await loadDocs();
+    showToast(`AI aktif · ${d.provider_name||d.provider||''}`);
+    setTimeout(closeKey,1200);
   }catch(e){keyMsg.className='kmsg err';keyMsg.textContent='✗ '+e.message;}
   keySave.disabled=false;
 }
@@ -1312,6 +1363,27 @@ function maybeAskKey(s){ // sekali per sesi tab: jika belum ada API key sama sek
     sessionStorage.setItem('keyAsked','1');openKey();
   }
 }
+
+// Update renderStatus agar tampilkan nama provider yang benar
+function renderStatus(s){
+  const off=!!s.llm_error||!s.llm_configured;
+  el.live.className='live-badge'+(s.ready&&!off?' ready':(s.error||off)?' error':'');
+  el.live.title=s.llm_error?('AI offline: '+s.llm_error):'';
+  const provInfo=PROVIDER_INFO[s.llm]||null;
+  const llmLabel=off?'AI OFFLINE':`${provInfo?provInfo.name:s.llm_name||s.llm||'AI'}`;
+  el.liveText.textContent=s.ready?(off?'SIAP · AI OFFLINE':'SIAP'):s.error?'ERROR':'Menyiapkan…';
+  el.statChips.innerHTML='';
+  [
+    ['Dokumen',s.docs||0],
+    ['Potongan',s.chunks||0],
+    ['Retrieval',s.retrieval||'—'],
+    ['AI Provider', off?'OFFLINE — clik 🔑 untuk set key':`${provInfo?provInfo.name:s.llm_name||s.llm||'—'}${s.llm_model?' · '+s.llm_model:''}`]
+  ].forEach(([k,v])=>{
+    const c=h('div','stat-chip');c.innerHTML=`<span>${k}</span><b>${esc(String(v))}</b>`;
+    el.statChips.appendChild(c);
+  });
+}
+
 
 // ── Init ──
 loadChat();
