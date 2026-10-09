@@ -271,7 +271,7 @@ class RAGEngine:
     # ----------------------------------------------------------------- answer
     def _condense(self, question: str, history: list[dict]) -> str:
         """Ubah pertanyaan lanjutan menjadi pertanyaan mandiri (hanya jika ada LLM)."""
-        if not history or not self.llm.enabled:
+        if not history or not self.llm.usable:
             return question
         recent = history[-4:]
         if len(tokenize(question)) >= 6:
