@@ -71,8 +71,8 @@ PROVIDERS = {
         "name": "Google Gemini",
         "key_prefix": "AIza",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "default_model": "gemini-2.0-flash-lite",
-        "fallback_models": ["gemini-1.5-flash-latest", "gemini-1.0-pro"],
+        "default_model": "gemini-2.5-flash",
+        "fallback_models": ["gemini-2.5-flash-lite", "gemini-2.0-flash"],
         "protocol": "gemini",
     },
 }
@@ -85,7 +85,7 @@ def detect_provider(key: str) -> Optional[str]:
         return "openrouter"
     if key.startswith("sk-ant-"):
         return "anthropic"
-    if key.startswith("AIza"):
+    if key.startswith("AIza") or key.startswith("AQ."):
         return "gemini"
     if key.startswith("gsk_"):
         return "groq"
@@ -315,8 +315,8 @@ def _validate_key(key: str, provider_name: str) -> None:
     protocol = p["protocol"]
 
     if protocol == "gemini":
-        url = f"{p['base_url']}/models?key={key}"
-        headers = {}
+        url = f"{p['base_url']}/models"
+        headers = {"x-goog-api-key": key}
     elif protocol == "anthropic":
         url = "https://api.anthropic.com/v1/models"
         headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
@@ -347,14 +347,30 @@ def apply_key(key: str, validate: bool = True, provider_hint: str = "", target: 
         raise LLMError("Format API key tidak valid.")
 
     pname = provider_hint or detect_provider(key)
-    if not pname or pname not in PROVIDERS:
-        raise LLMError(
-            "Jenis API key tidak dikenali. Format yang didukung:\n"
-            "• OpenRouter: sk-or-v1-...\n• OpenAI: sk-...\n• Groq: gsk_...\n"
-            "• Anthropic: sk-ant-...\n• Gemini: AIza...\n• Mistral: 32 karakter"
-        )
+    if pname and pname not in PROVIDERS:
+        pname = None
 
-    if validate:
+    if pname is None:
+        # Format key tidak dikenali dari awalan: coba ke tiap provider, pakai yang menerima.
+        # (validate=False dipakai saat memuat key tersimpan, yang selalu menyertakan provider.)
+        if not validate:
+            raise LLMError("Provider key tersimpan tidak diketahui.")
+        tried: list[str] = []
+        for cand in ("gemini", "openrouter", "openai", "groq", "anthropic", "mistral"):
+            try:
+                _validate_key(key, cand)
+                pname = cand
+                break
+            except LLMError as e:
+                tried.append(PROVIDERS[cand]["name"])
+                if "tidak dapat menghubungi" in str(e).lower():
+                    raise  # masalah jaringan, bukan masalah key
+        if pname is None:
+            raise LLMError(
+                "API key ditolak oleh semua penyedia yang didukung (" + ", ".join(tried) + "). "
+                "Periksa apakah key lengkap, masih aktif, dan belum dicabut."
+            )
+    elif validate:
         _validate_key(key, pname)
 
     p = PROVIDERS[pname]
