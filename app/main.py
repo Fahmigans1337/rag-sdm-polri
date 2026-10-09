@@ -25,7 +25,7 @@ MAX_UPLOAD_MB = 60
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if load_saved_key():  # key yang ditempel lewat UI (tersimpan di volume)
+    if load_saved_key(target=engine.llm):  # key yang ditempel lewat UI (tersimpan di volume)
         log.info("Key dari storage dimuat: provider=%s model=%s", engine.llm.provider_name, engine.llm.model)
     # Bangun index di thread terpisah agar server langsung merespons (/api/health menunjukkan status).
     if settings.AUTO_INGEST:
@@ -86,11 +86,9 @@ class KeyRequest(BaseModel):
 def set_llm_key(req: KeyRequest):
     """Pasang API key LLM dari UI. Provider dikenali otomatis dari prefix key."""
     try:
-        msg = apply_key(req.key, validate=True, provider_hint=req.provider or "")
+        msg = apply_key(req.key, validate=True, provider_hint=req.provider or "", target=engine.llm)
     except LLMError as e:
         raise HTTPException(400, str(e)) from e
-    # Sync LLM instance pada engine
-    engine.llm._set_provider(engine.llm.provider_name, engine.llm.api_key, engine.llm.model)
     engine.llm_error = None
     p = PROVIDERS.get(engine.llm.provider_name, {})
     return {

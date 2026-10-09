@@ -25,7 +25,7 @@ class LLMInfo:
     model: str
 
 
-# ─── Registry semua provider yang didukung ────────────────────────────────────
+# â”€â”€â”€ Registry semua provider yang didukung â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 PROVIDERS = {
     "openrouter": {
         "name": "OpenRouter",
@@ -130,8 +130,10 @@ class LLM:
         p = PROVIDERS[pname]
         self.provider_name = pname
         self.api_key = key
-        self.base_url = settings.OPENAI_BASE_URL if settings.OPENAI_BASE_URL and pname in ("openai", "openrouter") else p["base_url"]
-        self.model = model or settings.OPENAI_MODEL or p["default_model"]
+        self.base_url = p["base_url"]
+        self.model = model or p["default_model"]
+        self._last_model = self.model
+        self._cooldown = {}
 
     @property
     def provider(self) -> str:
@@ -151,7 +153,7 @@ class LLM:
 
     def generate(self, system: str, user: str, temperature: float = 0.2, max_tokens: int = 1500) -> str:
         if not self.enabled:
-            raise LLMError("LLM tidak dikonfigurasi. Tempel API key via tombol 🔑 API KEY.")
+            raise LLMError("LLM tidak dikonfigurasi. Tempel API key via tombol ðŸ”‘ API KEY.")
 
         p = PROVIDERS.get(self.provider_name)
         if not p:
@@ -174,6 +176,7 @@ class LLM:
                 else:
                     out = self._call_openai_compat(model, system, user, temperature, max_tokens)
                 self.model = model  # update ke model yang berhasil
+                self._last_model = model
                 return out
             except LLMError as e:
                 log.warning("Model %s gagal: %s", model, str(e)[:200])
@@ -183,9 +186,9 @@ class LLM:
                     break
         raise LLMError(f"Semua model gagal | " + " | ".join(errors))
 
-    # ──────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Protocol: OpenAI-compatible (OpenAI, OpenRouter, Groq, Mistral)
-    # ──────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _call_openai_compat(self, model: str, system: str, user: str, temperature: float, max_tokens: int) -> str:
         base = self.base_url.rstrip("/")
         headers: dict = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
@@ -238,9 +241,9 @@ class LLM:
         except (KeyError, IndexError) as e:
             raise LLMError(f"Respons tidak terduga: {r.text[:300]}") from e
 
-    # ──────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Protocol: Anthropic (Claude)
-    # ──────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _call_anthropic(self, model: str, system: str, user: str, temperature: float, max_tokens: int) -> str:
         headers = {
             "x-api-key": self.api_key,
@@ -268,9 +271,9 @@ class LLM:
         except (KeyError, IndexError) as e:
             raise LLMError(f"Respons Anthropic tidak terduga: {r.text[:300]}") from e
 
-    # ──────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Protocol: Google Gemini
-    # ──────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _call_gemini(self, model: str, system: str, user: str, temperature: float, max_tokens: int) -> str:
         base = PROVIDERS["gemini"]["base_url"]
         url = f"{base}/models/{model}:generateContent"
@@ -300,7 +303,7 @@ class LLM:
             raise LLMError(f"Respons Gemini tidak terduga: {r.text[:300]}") from e
 
 
-# ─── Fungsi utilitas API key dari UI ─────────────────────────────────────────
+# â”€â”€â”€ Fungsi utilitas API key dari UI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _key_file():
     return settings.INDEX_DIR / "llm_key.json"
@@ -317,8 +320,10 @@ def _validate_key(key: str, provider_name: str) -> None:
     elif protocol == "anthropic":
         url = "https://api.anthropic.com/v1/models"
         headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+    elif provider_name == "openrouter":
+        url = "https://openrouter.ai/api/v1/key"  # /models bersifat publik, /key butuh auth
+        headers = {"Authorization": f"Bearer {key}"}
     else:
-        # OpenAI-compatible: hit /models
         url = f"{p['base_url']}/models"
         headers = {"Authorization": f"Bearer {key}"}
 
@@ -327,30 +332,26 @@ def _validate_key(key: str, provider_name: str) -> None:
     except httpx.HTTPError as e:
         raise LLMError(f"Tidak dapat menghubungi {p['name']} ({type(e).__name__}). Periksa koneksi.") from e
 
-    if r.status_code in (401, 403):
+    # Gemini mengembalikan 400 (API key not valid) untuk key salah
+    if r.status_code in (401, 403) or (protocol == "gemini" and r.status_code == 400):
         raise LLMError(f"API key ditolak oleh {p['name']} (HTTP {r.status_code}). Periksa kembali key Anda.")
     if r.status_code >= 500:
         raise LLMError(f"{p['name']} sedang bermasalah (HTTP {r.status_code}). Coba lagi sebentar.")
 
 
-def apply_key(key: str, validate: bool = True, provider_hint: str = "") -> str:
+def apply_key(key: str, validate: bool = True, provider_hint: str = "", target: "LLM | None" = None) -> str:
     """Pasang API key saat runtime (dari UI). Provider dideteksi otomatis dari prefix key.
-    Memvalidasi ke penyedia (kecuali validate=False), menyimpan ke volume, dan mengembalikan pesan sukses."""
+    Memvalidasi ke penyedia (kecuali validate=False), menyimpan ke volume, memasang ke instance `target`."""
     key = re.sub(r"\s", "", key or "")
     if len(key) < 12 or not key.isascii():
         raise LLMError("Format API key tidak valid.")
 
-    # Deteksi provider
     pname = provider_hint or detect_provider(key)
-    if not pname:
+    if not pname or pname not in PROVIDERS:
         raise LLMError(
             "Jenis API key tidak dikenali. Format yang didukung:\n"
-            "• OpenRouter: sk-or-v1-...\n"
-            "• OpenAI: sk-...\n"
-            "• Groq: gsk_...\n"
-            "• Anthropic: sk-ant-...\n"
-            "• Gemini: AIza...\n"
-            "• Mistral: 32 karakter hex"
+            "• OpenRouter: sk-or-v1-...\n• OpenAI: sk-...\n• Groq: gsk_...\n"
+            "• Anthropic: sk-ant-...\n• Gemini: AIza...\n• Mistral: 32 karakter"
         )
 
     if validate:
@@ -358,16 +359,8 @@ def apply_key(key: str, validate: bool = True, provider_hint: str = "") -> str:
 
     p = PROVIDERS[pname]
     model = p["default_model"]
-
-    # Update settings global
-    if p["protocol"] == "gemini":
-        settings.GEMINI_API_KEY = key
-        settings.LLM_PROVIDER = "gemini"
-    else:
-        settings.OPENAI_API_KEY = key
-        settings.OPENAI_BASE_URL = p["base_url"]
-        settings.OPENAI_MODEL = model
-        settings.LLM_PROVIDER = "openai"
+    if target is not None:
+        target._set_provider(pname, key, model)
 
     try:
         settings.INDEX_DIR.mkdir(parents=True, exist_ok=True)
@@ -380,16 +373,14 @@ def apply_key(key: str, validate: bool = True, provider_hint: str = "") -> str:
     return f"API key {p['name']} aktif · model {model}"
 
 
-def load_saved_key() -> bool:
+def load_saved_key(target: "LLM | None" = None) -> bool:
     """Muat key yang disimpan dari UI (jika ada). Dipanggil saat startup."""
     f = _key_file()
     try:
         if f.is_file():
             data = json.loads(f.read_text(encoding="utf-8"))
-            key = data["key"]
-            provider_hint = data.get("provider", "")
-            apply_key(key, validate=False, provider_hint=provider_hint)
-            log.info("API key dimuat dari penyimpanan (provider=%s).", provider_hint or "auto")
+            apply_key(data["key"], validate=False, provider_hint=data.get("provider", ""), target=target)
+            log.info("API key dimuat dari penyimpanan (provider=%s).", data.get("provider", "auto"))
             return True
     except (OSError, ValueError, KeyError, LLMError) as e:
         log.warning("Key tersimpan tidak dapat dimuat: %s", e)
